@@ -1,0 +1,53 @@
+# Production-shaped stack. Only `caddy` is published. The API and web are reachable ONLY through it, because client-IP
+# trust (rate limits, login history) assumes nobody can talk to them directly or spoof forwarding headers.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: clubos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: clubos
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U clubos"], interval: 3s, retries: 20 }
+    restart: unless-stopped
+
+  api:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://clubos:${POSTGRES_PASSWORD}@db:5432/clubos
+      AUTO_CREATE_TABLES: "false"        # schema comes from Alembic (run on start)
+      MEDIA_DIR: /data/media
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-1}
+    volumes: [media:/data/media]
+    expose: ["8000"]
+    depends_on: { db: { condition: service_healthy } }
+    healthcheck: { test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/health')"], interval: 10s, retries: 6 }
+    restart: unless-stopped
+
+  worker:   # sends queued email, runs retention purge; same image
+    build: ./backend
+    command: ["python", "-m", "app.worker"]
+    env_file: .env
+    environment: { DATABASE_URL: "postgresql://clubos:${POSTGRES_PASSWORD}@db:5432/clubos" }
+    depends_on: { db: { condition: service_healthy } }
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./frontend
+      args: { API_URL: "http://api:8000", NEXT_PUBLIC_SITE_URL: "${BASE_URL:-http://localhost:3000}" }
+    environment: { API_URL: "http://api:8000" }
+    depends_on: [api]
+    expose: ["3000"]
+    restart: unless-stopped
+
+  caddy:     # TLS + the trusted client-IP boundary. Only service published to the internet.
+    image: caddy:2
+    environment: { DOMAIN: "${DOMAIN::80}" }
+    volumes: [./Caddyfile:/etc/caddy/Caddyfile:ro, caddy_data:/data, caddy_config:/config]
+    ports: ["80:80", "443:443"]
+    depends_on: [web]
+    restart: unless-stopped
+
+volumes: { pgdata: {}, media: {}, caddy_data: {}, caddy_config: {} }

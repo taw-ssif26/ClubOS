@@ -1,0 +1,7 @@
+# Dev convenience (auto-loaded by `docker compose up`). NOT for production: delete it or run with -f docker-compose.yml.
+# It publishes the web and API ports directly, which bypasses Caddy (so client IPs are spoofable in dev).
+services:
+  api:
+    ports: ["8000:8000"]
+  web:
+    ports: ["3000:3000"]

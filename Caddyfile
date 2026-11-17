@@ -1,0 +1,7 @@
+# The ONLY public entry point. Caddy overwrites client-supplied X-Forwarded-* headers with the real peer address,
+# which is what makes rate limits and login history trustworthy (verified: spoofed headers resolve to the true IP).
+# DOMAIN=:80 for local HTTP; DOMAIN=yourdomain.com in production (automatic HTTPS + renewal).
+{$DOMAIN::80} {
+	encode zstd gzip
+	reverse_proxy web:3000
+}
