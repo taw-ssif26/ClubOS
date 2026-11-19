@@ -5,10 +5,9 @@ const API = process.env.API_URL || "http://localhost:8000";
 const config: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
-  // Same-origin proxy: the session cookie stays first-party and there is no CORS surface.
+  // /api/* is handled by src/app/api/[...path]/route.ts (authenticated, retrying proxy). Images are public, cacheable GETs.
   async rewrites() {
     return [
-      { source: "/api/:path*", destination: `${API}/:path*` },
       { source: "/media/:path*", destination: `${API}/media/:path*` },
     ];
   },

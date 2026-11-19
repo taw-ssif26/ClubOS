@@ -19,6 +19,7 @@ services:
       AUTO_CREATE_TABLES: "false"        # schema comes from Alembic (run on start)
       MEDIA_DIR: /data/media
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-1}
+      PROXY_SECRET: ${PROXY_SECRET:?set PROXY_SECRET in .env}
     volumes: [media:/data/media]
     expose: ["8000"]
     depends_on: { db: { condition: service_healthy } }
@@ -37,7 +38,7 @@ services:
     build:
       context: ./frontend
       args: { API_URL: "http://api:8000", NEXT_PUBLIC_SITE_URL: "${BASE_URL:-http://localhost:3000}" }
-    environment: { API_URL: "http://api:8000" }
+    environment: { API_URL: "http://api:8000", PROXY_SECRET: "${PROXY_SECRET}" }
     depends_on: [api]
     expose: ["3000"]
     restart: unless-stopped

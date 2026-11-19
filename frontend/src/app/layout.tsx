@@ -9,6 +9,7 @@ import { VerifyBanner } from "@/components/VerifyBanner";
 import { SITE, sget } from "@/lib/server";
 import { themeBootScript } from "@/lib/theme";
 
+export const maxDuration = 60; // a cold free-tier API can take ~1 min to wake; SSR retries (see lib/server.ts) must fit inside
 export const dynamic = "force-dynamic"; // content comes from the API (editable by the super admin), never frozen at build time
 
 export const metadata: Metadata = {

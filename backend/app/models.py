@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import (JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, Text,
+from sqlalchemy import (JSON, Boolean, DateTime, ForeignKey, Index, Integer, LargeBinary, String, Text,
                         UniqueConstraint, Uuid)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -255,6 +255,7 @@ class EmailOutbox(Base):
     created_at = created()
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     unsubscribe_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    priority: Mapped[int] = mapped_column(Integer, default=0)   # 0 = transactional (verification, confirmations); 10 = bulk campaigns
 
 
 class AuditLog(Base):
@@ -342,6 +343,7 @@ class Upload(Base):
     original_name: Mapped[str] = mapped_column(String(200), default="")
     content_type: Mapped[str] = mapped_column(String(40))
     size: Mapped[int] = mapped_column(Integer)
+    data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, deferred=True)  # only when MEDIA_BACKEND=db
     created_at = created()
 
 

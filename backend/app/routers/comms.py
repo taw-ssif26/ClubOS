@@ -78,7 +78,7 @@ def send(body: SendIn, ctx: ClubCtx = Depends(club_perm("comms.send")), db: Sess
         footer = f"\n\n--\nYou're receiving this because you're part of {ctx.club.name} on ClubOS.\nUnsubscribe from {ctx.club.name} emails: {link}\n"
         row = queue_email(db, to=u.email, subject=render(body.subject, ctxvars), body=render(body.body, ctxvars) + footer,
                           club_id=ctx.club.id, send_at=send_at)
-        row.unsubscribe_url = link
+        row.unsubscribe_url, row.priority = link, 10
     audit(db, ctx.club.id, ctx.user.id, "communication.sent", body.subject[:80], {"recipients": len(users)})
     db.commit()
     return {"queued": len(users), "skipped_unsubscribed": skipped, "send_at": iso(send_at)}

@@ -23,17 +23,19 @@ no retention jobs, request ids or error tracking; React hydration bug (date form
 mode; a CSS-layer bug that made phones scroll sideways; grid overflow; per-IP rate limits that would lock out a campus.
 
 ## Client IP (read this)
-Rate limits and sign-in history trust `X-Forwarded-For`. **Next.js passes the client's header through untouched**, so
-without an overwriting proxy in front it is spoofable (reproduced). The compose file puts Caddy in front, which
-overwrites it (verified). If you deploy elsewhere (Railway, Cloudflare, nginx):
-1. Set `TRUSTED_PROXIES` to the number of proxies in front of the web app that APPEND the connecting address.
-   (Next.js itself does not count.)
-2. Run `scripts/verify-deploy.sh https://yourdomain.com`. The "spoofed X-Forwarded-For is NOT trusted" check must pass.
-3. Never publish the API or web ports directly.
+Rate limits and sign-in history need the real visitor IP. Next.js passes `X-Forwarded-For` through untouched, so on its own it is spoofable (reproduced).
+Current design:
+1. The web app's `/api` route handler works out the visitor IP from the one source it can trust (Vercel's own header on Vercel; Caddy's overwritten
+   `X-Forwarded-For` behind Caddy) and forwards it with a shared `PROXY_SECRET`. Visitor-supplied forwarding headers are discarded there.
+2. The API trusts the forwarded IP only when the secret matches. Anyone who reaches the API directly (Render's URL is public) is resolved by the
+   `TRUSTED_PROXIES` rule instead: the address appended by the host's edge, which a visitor cannot forge.
+3. `PROXY_SECRET` (32+ chars) is required in production on both sides; the API refuses to start without it.
+Check any deployment with `scripts/verify-deploy.sh https://yourdomain.com` and by opening `/api/whoami` from two different networks.
+Never publish the API or web ports directly in the Docker setup (Caddy is the only public entry).
 
 ## Only you can do (I cannot)
 1. **Domain and HTTPS.** Point DNS at the server, set `DOMAIN=yourdomain.com`; Caddy gets certificates automatically.
-2. **Email deliverability, the #1 launch risk.** No email, no registration. Create a Resend (or similar) account, verify
+2. **Email deliverability, the #1 launch risk.** No email, no registration. Use your Brevo account: verify
    your sending domain, add the SPF, DKIM and DMARC DNS records, fill `SMTP_*`. Then register with a Gmail address **and**
    a college/Bangladeshi provider address and confirm the verification mail arrives in the inbox, not spam.
 3. **Secrets.** `POSTGRES_PASSWORD` and `SECRET_KEY` (48+ random chars). Never change `SECRET_KEY` after launch
@@ -66,9 +68,9 @@ overwrites it (verified). If you deploy elsewhere (Railway, Cloudflare, nginx):
   /tmp/v/bin/pip freeze > backend/requirements.txt` then run the tests.
 
 ## Known limits (honest list)
-- Rate limiter is in-process memory: run **one** API instance (or move it to Redis first).
+- Rate limiter is in-process memory: run **one** API instance (or move it to Redis first). Free Render allows exactly one anyway.
 - Uploads are on local disk: keep the media volume; move to R2/S3 before scaling out.
-- No bounce/complaint handling for email (needs Resend webhooks). Watch your sender reputation; unsubscribe is honoured.
+- No bounce/complaint handling for email (needs Brevo webhooks). Watch your sender reputation; unsubscribe is honoured.
 - No automated frontend tests; browser-verified manually in 3 modes on desktop and mobile Chromium only
   (not Safari, Firefox, or real low-end Android devices).
 - Not built: certificates, paid events and ticket types, automations, teams/tags, custom pages/domains,

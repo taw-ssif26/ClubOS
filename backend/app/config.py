@@ -20,6 +20,15 @@ class Settings(BaseSettings):
     media_dir: str = "./media"                        # mount a persistent volume here in production
     max_upload_mb: int = 5
 
+    proxy_secret: str = ""                            # shared with the web proxy; lets the API trust the client IP the proxy forwards
+    brevo_api_key: str = ""                           # Brevo HTTPS API key (needed where outbound SMTP is blocked, e.g. Render free)
+    email_daily_cap: int = 0                          # provider daily limit (Brevo free = 300). 0 = unlimited. Excess waits for tomorrow.
+    run_worker_in_api: bool = False                   # run the email worker inside the API process (no separate worker service)
+    worker_poll_seconds: int = 900                    # slow poll; emails also send immediately after being queued (lets Neon sleep)
+    media_backend: str = "disk"                       # disk | db  (db = images stored in Postgres; for hosts without persistent disks)
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
+
     smtp_host: str = ""                               # empty = log emails to console instead
     smtp_port: int = 587
     smtp_user: str = ""

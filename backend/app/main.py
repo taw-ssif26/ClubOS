@@ -1,20 +1,22 @@
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
-from sqlalchemy import text
+from fastapi.responses import FileResponse, JSONResponse, Response
+from sqlalchemy import select, text
+from sqlalchemy.orm import undefer
 
 from . import models  # noqa: F401 - register tables
 from .config import settings
 from .db import Base, SessionLocal, engine
 from .deps import COOKIE
+from .models import Upload
 from .net import client_ip
 from .ratelimit import hit
 from .routers import account, admin, auth, clubs, comms, content, discover, events, ops, reviews, site, users
@@ -47,13 +49,22 @@ async def lifespan(app: FastAPI):
     if settings.cookie_secure:  # production guard rails
         if len(settings.secret_key) < 32:
             raise RuntimeError("SECRET_KEY must be set to at least 32 random characters in production")
-        if not settings.smtp_host:
-            log.warning("SMTP_HOST is empty: verification and confirmation emails will NOT be delivered")
+        if len(settings.proxy_secret) < 32:
+            raise RuntimeError("PROXY_SECRET must be set to at least 32 random characters in production (shared with the web proxy)")
+        if not (settings.smtp_host or settings.brevo_api_key):
+            log.warning("No SMTP_HOST or BREVO_API_KEY: verification and confirmation emails will NOT be delivered")
     if settings.auto_create_tables:
         Base.metadata.create_all(engine)
     with SessionLocal() as db:
         seed(db)  # inserts missing default plans/copy only; never overwrites admin edits
+    if settings.run_worker_in_api:
+        from . import inproc_worker
+        inproc_worker.start()
     yield
+    if settings.run_worker_in_api:
+        from . import inproc_worker
+        inproc_worker.stop.set()
+        inproc_worker.wake.set()
 
 
 _prod = settings.cookie_secure  # production: no interactive docs / schema (a free endpoint map for attackers)
@@ -105,12 +116,37 @@ async def guard(request: Request, call_next):
     return resp
 
 
-os.makedirs(settings.media_dir, exist_ok=True)
-app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")
+MEDIA_NAME = re.compile(r"^[a-f0-9]{32}\.(png|jpg|webp)$")
+MEDIA_TYPES = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp"}
+MEDIA_HEADERS = {"Cache-Control": "public, max-age=31536000, s-maxage=31536000, immutable", "X-Content-Type-Options": "nosniff"}
+
+
+@app.get("/media/{club_id}/{name}")
+def media(club_id: uuid.UUID, name: str):
+    """Serves uploaded images from disk or (MEDIA_BACKEND=db) from Postgres. Names are random and immutable, so they cache forever."""
+    if not MEDIA_NAME.match(name):
+        return JSONResponse({"detail": "Not found"}, status_code=404)
+    if settings.media_backend == "db":
+        with SessionLocal() as db:
+            up = db.scalar(select(Upload).options(undefer(Upload.data)).where(Upload.club_id == club_id, Upload.stored_name == name))
+            if not up or up.data is None:
+                return JSONResponse({"detail": "Not found"}, status_code=404)
+            return Response(up.data, media_type=up.content_type, headers=MEDIA_HEADERS)
+    path = os.path.join(settings.media_dir, str(club_id), name)
+    if not os.path.isfile(path):
+        return JSONResponse({"detail": "Not found"}, status_code=404)
+    return FileResponse(path, media_type=MEDIA_TYPES[name.rsplit(".", 1)[1]], headers=MEDIA_HEADERS)
+
 
 for r in (auth.router, account.router, users.router, clubs.router, ops.router, events.router, content.router, comms.router,
           reviews.router, discover.router, site.router, admin.router):
     app.include_router(r)
+
+
+@app.get("/ping")
+def ping():
+    """No database access: safe for uptime monitors and keep-alive pings (they must not wake a scale-to-zero database)."""
+    return {"ok": True}
 
 
 @app.get("/whoami")

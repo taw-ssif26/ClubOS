@@ -11,7 +11,7 @@ alembic
 pyotp
 cryptography
 sentry-sdk
-# test-only
+# test-only (httpx is also a runtime dependency: HTTPS email)
 httpx
 pytest
 pytest-cov

@@ -174,11 +174,14 @@ async def upload(file: UploadFile, ctx: ClubCtx = Depends(club_perm("files.manag
         raise HTTPException(402, {"code": "limit_reached", "limit": "storage_mb", "max": limit_mb,
                                   "message": f"Your plan includes {limit_mb} MB of storage. Delete files or upgrade."})
     name = f"{uuid.uuid4().hex}.{kind[1]}"
-    folder = os.path.join(settings.media_dir, str(ctx.club.id))
-    os.makedirs(folder, exist_ok=True)
-    with open(os.path.join(folder, name), "wb") as fh:
-        fh.write(data)
     up = Upload(club_id=ctx.club.id, user_id=ctx.user.id, stored_name=name, original_name=(file.filename or "")[:200], content_type=kind[0], size=len(data))
+    if settings.media_backend == "db":
+        up.data = data
+    else:
+        folder = os.path.join(settings.media_dir, str(ctx.club.id))
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, name), "wb") as fh:
+            fh.write(data)
     db.add(up)
     db.commit()
     return {"id": str(up.id), "url": f"/media/{ctx.club.id}/{name}", "size": len(data)}

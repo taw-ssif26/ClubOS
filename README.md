@@ -16,7 +16,7 @@ Make yourself super admin, then enable 2FA in your security settings (required f
 ```bash
 docker compose exec api python -m app.cli make-admin you@example.com
 ```
-**Going live? Read [LAUNCH.md](LAUNCH.md)** (checklist, runbook, honest limits) and run `scripts/verify-deploy.sh https://yourdomain.com`.
+**Free hosting (Vercel + Render + Neon)? Read [DEPLOY-FREE.md](DEPLOY-FREE.md).** **Going live? Read [LAUNCH.md](LAUNCH.md)** (checklist, runbook, honest limits) and run `scripts/verify-deploy.sh https://yourdomain.com`.
 
 ## Develop
 ```bash
@@ -50,6 +50,5 @@ without deleting anything.
 - `COOKIE_SECURE=true`, real `BASE_URL`/`CORS_ORIGINS`, `NEXT_PUBLIC_SITE_URL`
 - Managed Postgres with backups; run `api`, `worker`, `web` as three services from the same repo
 - Persistent volume mounted at `MEDIA_DIR` (uploads), or swap `uploads` storage for S3/R2
-- Resend (or any SMTP) with a verified sending domain
+- Brevo (or any SMTP) with a verified sender and an authenticated domain
 - Keep Caddy (or another proxy that overwrites X-Forwarded-For) as the only public entry
-# ClubOS

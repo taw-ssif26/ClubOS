@@ -19,9 +19,17 @@ Pro (default ৳800) unlocks scale + email + analytics + themes. Organization/En
 - Dates are formatted by hand in Dhaka time (Intl differs between Node and Chrome -> hydration errors).
 - Tooling note: screenshot rig = Qt WebEngine under xvfb (scroll-and-stitch capture; resizing the window distorts vh units).
 
+## Free hosting (v0.3): Vercel + Render + Neon + Brevo. See DEPLOY-FREE.md. Verified locally, NOT on the real services.
+Adapted for free-tier facts (checked Nov 2026): Render free blocks SMTP / no disk / no workers / sleeps 15 min; Neon free sleeps after 5 min, 100 CU-h, 1 GB;
+Brevo free 300 emails/day; Vercel Hobby is NON-COMMERCIAL (must move to Pro before charging clubs).
+Built: Brevo HTTPS sender, EMAIL_DAILY_CAP + transactional-first priority, in-API worker (wakes on commit, 15-min poll so Neon can sleep),
+/ping (no DB), images in Postgres (MEDIA_BACKEND=db), retrying authenticated /api proxy (PROXY_SECRET, cold-start retry, no POST replay),
+render.yaml, vercel.json, encrypted nightly backup workflow (round-trip tested).
+Tests: 36 pass on PostgreSQL, 33 + 3 skipped on SQLite and in the pinned clean venv.
+
 ## Key Files: LAUNCH.md (go-live checklist/runbook/limits) | scripts/verify-deploy.sh | Caddyfile | backend/app/{net,ratelimit,deps}.py (trust + auth)
 backend/app/routers/account.py (2FA, export, delete, unsubscribe) | backend/app/seed.py (all default copy + legal drafts) | frontend/src/app/globals.css
 
 ## Known gaps: see LAUNCH.md "Known limits". Biggest: email deliverability untested, no frontend tests, single-instance rate limiter, no bounce handling, local-disk uploads, legal text needs lawyer review.
 
-## Next Step: do the "Only you can do" list in LAUNCH.md (domain, Resend + SPF/DKIM/DMARC, secrets, backups + restore drill, first admin + 2FA, lawyer review), run scripts/verify-deploy.sh, then pilot one club and one event.
+## Next Step: do the "Only you can do" list in LAUNCH.md (domain, Brevo verified sender + SPF/DKIM/DMARC, secrets, backups + restore drill, first admin + 2FA, lawyer review), run scripts/verify-deploy.sh, then pilot one club and one event.
