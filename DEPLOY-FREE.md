@@ -81,6 +81,12 @@ Neon's own point-in-time restore window on the free plan is short; I did not ver
   instance to remove the sleep. Do this before the first payment, not after.
 
 ## Troubleshooting
+**First, open `https://yoursite/status`.** It tests the Vercel-to-Render link and prints plain-English hints (no secrets shown).
+- **Home says "We'll be right back" and registering says "Not Found"**: the site can't reach the API. Almost always `API_URL` in Vercel: it must be exactly
+  `https://<name>.onrender.com` (no trailing slash, no spaces, not the Vercel address). Newer code tolerates a trailing slash, but the value must still point at Render.
+  **After changing any Vercel environment variable you must redeploy** (Deployments > ... > Redeploy); running deployments keep the old values.
+- **`/status` says the API answered 404**: Render isn't serving the API (a failed deploy makes Render answer 404). Open `https://<name>.onrender.com/ping` yourself; it must show `{"ok":true}`. If not, read the Render logs.
+- **`/status` says it can't reach the API**: wrong spelling in `API_URL`, or the Render service is suspended.
 - **Site shows "We'll be right back"**: the API is waking or down. Open `/ping` on the Render URL; check Render logs.
 - **Login works but you get logged out / 403 on actions**: `BASE_URL` / `CORS_ORIGINS` on Render don't exactly match the site address (including `https://`, no trailing slash).
 - **API crashes at boot**: Render logs. Usually `SECRET_KEY`/`PROXY_SECRET` shorter than 32 characters, or a wrong `DATABASE_URL`.

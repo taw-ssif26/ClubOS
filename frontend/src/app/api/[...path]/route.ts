@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { apiBase } from "@/lib/apiurl";
 
 /**
  * Same-origin proxy to the API (keeps the session cookie first-party) with three jobs a plain rewrite can't do:
@@ -30,8 +31,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function handler(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   const { path } = await ctx.params;
-  const api = process.env.API_URL || "http://localhost:8000";
-  const url = `${api}/${path.map(encodeURIComponent).join("/")}${req.nextUrl.search}`;
+  const url = `${apiBase()}/${path.map(encodeURIComponent).join("/")}${req.nextUrl.search}`;
 
   const headers = new Headers();
   req.headers.forEach((v, k) => { if (!DROP_REQ.has(k.toLowerCase())) headers.set(k, v); });

@@ -1,4 +1,6 @@
-const API = process.env.API_URL || "http://localhost:8000";
+import { apiBase } from "./apiurl";
+
+const API = apiBase();
 
 /** Server-side fetch against the API. Returns null on any failure so pages degrade instead of crashing. */
 export async function sget<T = any>(path: string, revalidate = 15): Promise<T | null> {
