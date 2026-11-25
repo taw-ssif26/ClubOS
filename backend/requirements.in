@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg[binary]
+pydantic-settings
+argon2-cffi
+segno
+email-validator
+python-multipart
+alembic
+pyotp
+cryptography
+sentry-sdk
+# test-only (httpx is also a runtime dependency: HTTPS email)
+httpx
+pytest
+pytest-cov

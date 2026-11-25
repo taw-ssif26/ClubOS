@@ -1,0 +1,173 @@
+import json
+import logging
+import os
+import re
+import time
+import uuid
+from urllib.parse import quote
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse, Response
+from sqlalchemy import select, text
+from sqlalchemy.orm import undefer
+
+from . import models  # noqa: F401 - register tables
+from .config import settings
+from .db import Base, SessionLocal, engine
+from .deps import COOKIE
+from .models import Upload
+from .net import client_ip
+from .ratelimit import hit
+from .routers import account, admin, auth, clubs, comms, content, discover, events, ops, points, reviews, site, users
+from .seed import seed
+
+
+class JsonFormatter(logging.Formatter):
+    def format(self, record):
+        d = {"ts": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"), "level": record.levelname, "logger": record.name, "msg": record.getMessage()}
+        for k in ("request_id", "method", "path", "status", "ms", "ip"):
+            if hasattr(record, k):
+                d[k] = getattr(record, k)
+        if record.exc_info:
+            d["exc"] = self.formatException(record.exc_info)
+        return json.dumps(d)
+
+
+_h = logging.StreamHandler()
+_h.setFormatter(JsonFormatter())
+logging.basicConfig(level=logging.INFO, handlers=[_h], force=True)
+log = logging.getLogger("clubos")
+
+if settings.sentry_dsn:
+    import sentry_sdk
+    sentry_sdk.init(dsn=settings.sentry_dsn, traces_sample_rate=0.05, send_default_pii=False)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if settings.cookie_secure:  # production guard rails
+        if len(settings.secret_key) < 32:
+            raise RuntimeError("SECRET_KEY must be set to at least 32 random characters in production")
+        if len(settings.proxy_secret) < 32:
+            raise RuntimeError("PROXY_SECRET must be set to at least 32 random characters in production (shared with the web proxy)")
+        if not (settings.smtp_host or settings.brevo_api_key):
+            log.warning("No SMTP_HOST or BREVO_API_KEY: verification and confirmation emails will NOT be delivered")
+    if settings.auto_create_tables:
+        Base.metadata.create_all(engine)
+    with SessionLocal() as db:
+        seed(db)  # inserts missing default plans/copy only; never overwrites admin edits
+    if settings.run_worker_in_api:
+        from . import inproc_worker
+        inproc_worker.start()
+    yield
+    if settings.run_worker_in_api:
+        from . import inproc_worker
+        inproc_worker.stop.set()
+        inproc_worker.wake.set()
+
+
+_prod = settings.cookie_secure  # production: no interactive docs / schema (a free endpoint map for attackers)
+app = FastAPI(title="ClubOS API", version="0.2.0", lifespan=lifespan,
+              docs_url=None if _prod else "/docs", redoc_url=None if _prod else "/redoc", openapi_url=None if _prod else "/openapi.json")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["Content-Type", "Authorization"],
+)
+
+ALLOWED_ORIGINS = {o.strip().rstrip("/") for o in settings.cors_origins.split(",") if o.strip()} | {settings.base_url.rstrip("/")}
+UNSAFE = ("POST", "PUT", "PATCH", "DELETE")
+
+
+@app.middleware("http")
+async def guard(request: Request, call_next):
+    """Request id, CSRF origin check, global write limiter, access log, safe 500s, security headers."""
+    rid = request.headers.get("x-request-id", "")[:40] or uuid.uuid4().hex[:16]
+    ip = client_ip(request)
+    t0 = time.perf_counter()
+    if request.method in UNSAFE:
+        origin = request.headers.get("origin")
+        if request.cookies.get(COOKIE) and origin and origin.rstrip("/") not in ALLOWED_ORIGINS:
+            return JSONResponse({"detail": "Cross-origin request blocked"}, status_code=403, headers={"X-Request-ID": rid})
+        tok = request.cookies.get(COOKIE)
+        # per-session budget for signed-in users; a generous per-IP ceiling (campus NAT!) stops anonymous floods
+        if settings.rate_limit_enabled and not (hit(f"writes:ip:{ip}", 1200, 60) and (hit(f"writes:s:{tok[:16]}", 120, 60) if tok else True)):
+            return JSONResponse({"detail": "Too many requests. Slow down."}, status_code=429, headers={"X-Request-ID": rid})
+    try:
+        resp = await call_next(request)
+    except Exception:  # noqa: BLE001
+        log.exception("unhandled error", extra={"request_id": rid, "method": request.method, "path": request.url.path, "ip": ip})
+        resp = JSONResponse({"detail": "Internal error", "request_id": rid}, status_code=500)
+    resp.headers["X-Request-ID"] = rid
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["X-Frame-Options"] = "DENY"
+    resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if not request.url.path.startswith(("/docs", "/redoc")) and "content-security-policy" not in resp.headers:  # routes (e.g. document downloads) may set a stricter one
+        resp.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
+    if settings.cookie_secure:
+        resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    if request.url.path != "/health":
+        log.info("request", extra={"request_id": rid, "method": request.method, "path": request.url.path, "status": resp.status_code,
+                                   "ms": round((time.perf_counter() - t0) * 1000), "ip": ip})
+    return resp
+
+
+MEDIA_NAME = re.compile(r"^[a-f0-9]{32}\.(png|jpg|webp|pdf|docx|xlsx|pptx|txt|csv)$")
+IMMUTABLE = {"Cache-Control": "public, max-age=31536000, s-maxage=31536000, immutable", "X-Content-Type-Options": "nosniff"}
+
+
+@app.get("/media/{club_id}/{name}")
+def media(club_id: uuid.UUID, name: str):
+    """Uploaded files from disk or (MEDIA_BACKEND=db) Postgres. Names are random and immutable, so they cache forever.
+    Images render inline; documents are ALWAYS downloads, with a sandboxed CSP, so an uploaded file can never run in the site's origin."""
+    if not MEDIA_NAME.match(name):
+        return JSONResponse({"detail": "Not found"}, status_code=404)
+    with SessionLocal() as db:
+        stmt = select(Upload).where(Upload.club_id == club_id, Upload.stored_name == name)
+        if settings.media_backend == "db":
+            stmt = stmt.options(undefer(Upload.data))
+        up = db.scalar(stmt)
+        if not up:
+            return JSONResponse({"detail": "Not found"}, status_code=404)
+        headers = dict(IMMUTABLE)
+        if up.kind == "document":
+            headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(up.original_name or name)}"
+            headers["Content-Security-Policy"] = "default-src 'none'; sandbox"
+        if settings.media_backend == "db":
+            if up.data is None:
+                return JSONResponse({"detail": "Not found"}, status_code=404)
+            return Response(up.data, media_type=up.content_type, headers=headers)
+        path = os.path.join(settings.media_dir, str(club_id), name)
+        if not os.path.isfile(path):
+            return JSONResponse({"detail": "Not found"}, status_code=404)
+        return FileResponse(path, media_type=up.content_type, headers=headers)
+
+
+for r in (auth.router, account.router, users.router, clubs.router, ops.router, points.router, events.router, content.router, comms.router,
+          reviews.router, discover.router, site.router, admin.router):
+    app.include_router(r)
+
+
+@app.get("/ping")
+def ping():
+    """No database access: safe for uptime monitors and keep-alive pings (they must not wake a scale-to-zero database)."""
+    return {"ok": True}
+
+
+@app.get("/whoami")
+def whoami(request: Request):
+    """The client IP as the API resolves it. Deploy check: `curl -H 'X-Forwarded-For: 1.2.3.4' https://yoursite/api/whoami`
+    must NOT answer 1.2.3.4. If it does, TRUSTED_PROXIES or the front proxy is misconfigured."""
+    return {"ip": client_ip(request)}
+
+
+@app.get("/health")
+def health():
+    with SessionLocal() as db:
+        db.execute(text("select 1"))
+    return {"ok": True}

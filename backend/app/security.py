@@ -1,0 +1,27 @@
+import hashlib
+import secrets
+
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerifyMismatchError
+
+_ph = PasswordHasher()
+DUMMY_HASH = _ph.hash("dummy-password-for-timing")
+
+
+def hash_password(password: str) -> str:
+    return _ph.hash(password)
+
+
+def verify_password(hashed: str, password: str) -> bool:
+    try:
+        return _ph.verify(hashed, password)
+    except (VerifyMismatchError, InvalidHashError):
+        return False
+
+
+def new_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
