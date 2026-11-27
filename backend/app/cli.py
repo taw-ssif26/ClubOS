@@ -8,8 +8,11 @@ from .models import User
 
 
 def main():
+    if len(sys.argv) == 2 and sys.argv[1] in ("migrate", "db-status"):
+        from . import dbtools
+        sys.exit(dbtools.migrate() if sys.argv[1] == "migrate" else dbtools.status())
     if len(sys.argv) != 3 or sys.argv[1] not in ("make-admin", "reset-2fa"):
-        sys.exit("usage: python -m app.cli make-admin|reset-2fa <email>")
+        sys.exit("usage: python -m app.cli migrate | db-status | make-admin <email> | reset-2fa <email>")
     with SessionLocal() as db:
         u = db.scalar(select(User).where(User.email == sys.argv[2].lower()))
         if not u:

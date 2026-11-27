@@ -91,6 +91,17 @@ Neon's own point-in-time restore window on the free plan is short; I did not ver
    can award points to its members and the leaderboard is visible only to that club's members."
 5. Built-in club roles are updated automatically on startup so existing clubs' Administrators and Executives can award points.
 
+## Database migration problems ("alembic", "multiple heads", "relation already exists", "Can't locate revision")
+The API now starts with `python -m app.cli migrate` instead of raw `alembic upgrade head`. It detects what state the database is in and repairs it safely
+(it only adds what's missing and never drops or alters data). It handles: a fresh database, the normal upgrade, tables created outside Alembic, and a
+recorded revision that no longer exists in the code. It stops with a clear message only when the code itself has two migration chains.
+- **Render start command** must be: `python -m app.cli migrate && uvicorn app.main:app --host 0.0.0.0 --port $PORT`, and add the env var `AUTO_CREATE_TABLES=false`.
+  `render.yaml` sets both; if you created the service by hand, change them in Render > Settings.
+- **Fix a stuck database right now** (from your own computer, same setup as the make-admin step):
+  `DATABASE_URL='<neon url>' python -m app.cli db-status` shows what's wrong, then `DATABASE_URL='<neon url>' python -m app.cli migrate` repairs it.
+- **"Multiple head revisions"** means `backend/migrations/versions/` contains stale files. It must contain exactly two:
+  `2cb0eaba0e78_baseline_v0_3.py` and `c0de00000001_locations_approvals_leaderboard_.py`. Delete any others, commit, push. The migrate step lists the files it sees.
+
 ## Troubleshooting
 **First, open `https://yoursite/status`.** It tests the Vercel-to-Render link and prints plain-English hints (no secrets shown).
 - **Home says "We'll be right back" and registering says "Not Found"**: the site can't reach the API. Almost always `API_URL` in Vercel: it must be exactly

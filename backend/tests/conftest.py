@@ -4,6 +4,7 @@ import re
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test_clubos.db")
 os.environ.setdefault("CLUB_APPROVAL_REQUIRED", "false")  # most tests are about club behaviour; approval has its own tests
 os.environ["RATE_LIMIT_ENABLED"] = "false"
+os.environ.setdefault("AUTO_CREATE_TABLES", "true")   # tests build their own schema
 if os.path.exists("test_clubos.db"):
     os.remove("test_clubos.db")
 

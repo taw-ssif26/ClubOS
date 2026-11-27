@@ -54,7 +54,7 @@ async def lifespan(app: FastAPI):
             raise RuntimeError("PROXY_SECRET must be set to at least 32 random characters in production (shared with the web proxy)")
         if not (settings.smtp_host or settings.brevo_api_key):
             log.warning("No SMTP_HOST or BREVO_API_KEY: verification and confirmation emails will NOT be delivered")
-    if settings.auto_create_tables:
+    if settings.auto_create_tables if settings.auto_create_tables is not None else engine.dialect.name == "sqlite":
         Base.metadata.create_all(engine)
     with SessionLocal() as db:
         seed(db)  # inserts missing default plans/copy only; never overwrites admin edits

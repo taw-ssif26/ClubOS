@@ -8,7 +8,7 @@ services:
     region: singapore            # closest to Bangladesh. Put the Neon database in AWS Singapore too.
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: python -m app.cli migrate && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /ping       # /ping never touches the database, so health checks cannot burn Neon compute hours
     autoDeploy: true
     envVars:
@@ -20,6 +20,7 @@ services:
       - { key: CORS_ORIGINS, sync: false }        # same value as BASE_URL
       - { key: BREVO_API_KEY, sync: false }       # Brevo > SMTP & API > API keys (the "xkeysib-..." key, not the SMTP key)
       - { key: SMTP_FROM, sync: false }           # ClubOS <no-reply@yourdomain.com>  (must be a VERIFIED SENDER in Brevo)
+      - { key: AUTO_CREATE_TABLES, value: "false" }   # the schema is owned by `app.cli migrate`, never by app startup
       - { key: COOKIE_SECURE, value: "true" }
       - { key: TRUSTED_PROXIES, value: "1" }      # Render's edge appends the connecting address; direct hits resolve correctly
       - { key: RUN_WORKER_IN_API, value: "true" } # free plan has no background workers

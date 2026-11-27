@@ -14,7 +14,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12", cache: pip, cache-dependency-path: backend/requirements.txt }
       - run: pip install -r backend/requirements.txt
-      - run: cd backend && alembic upgrade head && alembic check
+      - run: cd backend && python -m app.cli migrate && python -m app.cli db-status
         env: { DATABASE_URL: "postgresql://clubos:clubos@localhost:5432/clubos_test", AUTO_CREATE_TABLES: "false" }
       - run: cd backend && pytest -q
         env: { DATABASE_URL: "postgresql://clubos:clubos@localhost:5432/clubos_test" }

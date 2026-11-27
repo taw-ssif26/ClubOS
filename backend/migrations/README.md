@@ -10,3 +10,7 @@
 
 If you ever see "Multiple head revisions are present": a stale or duplicate migration file is in `versions/`.
 Delete the extras (keep the newest chain), commit, push. `tests/test_migrations.py` fails CI on this.
+
+## Running them
+Production runs `python -m app.cli migrate` (not raw `alembic upgrade head`): it repairs the awkward states described in app/dbtools.py.
+`python -m app.cli db-status` reports what is wrong without changing anything.

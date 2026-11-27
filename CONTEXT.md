@@ -34,6 +34,11 @@ super-admin approval of new clubs (limits: 2 pending, 5 total, unique names, 20+
 retrying /media proxy + Pic fallback + System check card (detects MEDIA_BACKEND=disk on Render).
 Tests: 47 pass on PostgreSQL (44 + 3 skipped on SQLite).
 
+## Migrations (v0.4.1): `python -m app.cli migrate` is the ONLY thing that touches the schema in production.
+Self-heals: empty DB, normal upgrade, tables built outside Alembic, unknown recorded revision (additive sync + stamp head); refuses on duplicate chains; advisory lock for
+overlapping deploys. App startup no longer runs create_all except on SQLite (it did by default before, which caused "relation already exists"). Migrations tolerate existing objects.
+Never regenerate the baseline again once a real database exists: add incremental revisions only. 8 Postgres scenario tests in tests/test_migrate.py.
+
 ## Key Files: LAUNCH.md (go-live checklist/runbook/limits) | scripts/verify-deploy.sh | Caddyfile | backend/app/{net,ratelimit,deps}.py (trust + auth)
 backend/app/routers/account.py (2FA, export, delete, unsubscribe) | backend/app/seed.py (all default copy + legal drafts) | frontend/src/app/globals.css
 

@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     sentry_dsn: str = ""
     terms_version: str = "2026-11"
     club_approval_required: bool = True               # new clubs wait for super-admin approval (anti-spam)
-    auto_create_tables: bool = True                   # dev convenience; use Alembic in production
+    auto_create_tables: bool | None = None            # None = only for SQLite (dev). Production schema is managed by `python -m app.cli migrate`.
 
     media_dir: str = "./media"                        # mount a persistent volume here in production
     max_upload_mb: int = 5                            # images
